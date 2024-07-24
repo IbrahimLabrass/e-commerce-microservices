@@ -3,8 +3,12 @@ package com.ibrahim.ecommerce.order;
 
 import com.ibrahim.ecommerce.customer.CustomerClient;
 import com.ibrahim.ecommerce.exception.BusinessException;
+import com.ibrahim.ecommerce.kafka.OrderConfirmation;
+import com.ibrahim.ecommerce.kafka.OrderProducer;
 import com.ibrahim.ecommerce.orderline.OrderLineRequest;
 import com.ibrahim.ecommerce.orderline.OrderLineService;
+import com.ibrahim.ecommerce.payment.PaymentClient;
+import com.ibrahim.ecommerce.payment.PaymentRequest;
 import com.ibrahim.ecommerce.product.ProductClient;
 import com.ibrahim.ecommerce.product.PurchaseRequest;
 import jakarta.persistence.EntityNotFoundException;
@@ -15,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.stream.Collectors;
 
+
+
 @Service
 @RequiredArgsConstructor
 public class OrderService {
@@ -22,8 +28,10 @@ public class OrderService {
     private final OrderRepository repository;
     private final OrderMapper mapper;
     private final CustomerClient customerClient;
+    private final PaymentClient paymentClient;
     private final ProductClient productClient;
     private final OrderLineService orderLineService;
+    private final OrderProducer orderProducer;
 
     @Transactional
     public Integer createOrder(OrderRequest request) {
@@ -44,7 +52,24 @@ public class OrderService {
                     )
             );
         }
-      
+        var paymentRequest = new PaymentRequest(
+                request.amount(),
+                request.paymentMethod(),
+                order.getId(),
+                order.getReference(),
+                customer
+        );
+        paymentClient.requestOrderPayment(paymentRequest);
+
+        orderProducer.sendOrderConfirmation(
+                new OrderConfirmation(
+                        request.reference(),
+                        request.amount(),
+                        request.paymentMethod(),
+                        customer,
+                        purchasedProducts
+                )
+        );
 
         return order.getId();
     }
